@@ -16,6 +16,7 @@ from telegram.ext import (
 
 from bot.config import config
 from bot.database.connection import get_pool, close_pool
+from bot.database.migrations import run_migrations
 
 # Хендлеры
 from bot.handlers.start import (
@@ -102,7 +103,8 @@ def register_handlers(app: Application):
 async def post_init(app: Application):
     """Инициализация после запуска"""
     await get_pool()
-    logger.info("База данных подключена")
+    await run_migrations()
+    logger.info("База данных подключена, миграции выполнены")
 
 
 async def post_shutdown(app: Application):
