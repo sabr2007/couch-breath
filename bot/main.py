@@ -48,6 +48,11 @@ from bot.handlers.admin import (
     unlock_all_handler,
     force_accept_handler
 )
+from bot.handlers.support import (
+    ask_curator_callback,
+    receive_question_handler,
+    curator_reply_handler
+)
 
 
 # Настройка логирования
@@ -60,10 +65,19 @@ logger = logging.getLogger(__name__)
 
 async def receive_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Универсальный обработчик текстовых сообщений"""
+    # Сначала проверяем ответ куратора
+    await curator_reply_handler(update, context)
+    # Затем вопрос от студента
+    await receive_question_handler(update, context)
     # Пытаемся обработать как код доступа
     await code_input_handler(update, context)
     # Затем как ДЗ
     await receive_hw_text_handler(update, context)
+
+
+async def receive_media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик фото и голосовых сообщений (для вопросов куратору)"""
+    await receive_question_handler(update, context)
 
 
 def register_handlers(app: Application):
@@ -96,8 +110,12 @@ def register_handlers(app: Application):
     # Callbacks — homework
     app.add_handler(CallbackQueryHandler(submit_hw_callback, pattern="^submit_hw:"))
 
+    # Callbacks — support
+    app.add_handler(CallbackQueryHandler(ask_curator_callback, pattern="^ask_curator:"))
+
     # Message handlers
     app.add_handler(MessageHandler(filters.Document.ALL, receive_hw_file_handler))
+    app.add_handler(MessageHandler(filters.PHOTO | filters.VOICE, receive_media_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_text_handler))
 
 
