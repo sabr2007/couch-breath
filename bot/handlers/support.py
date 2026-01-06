@@ -72,13 +72,9 @@ async def receive_question_handler(update: Update, context: ContextTypes.DEFAULT
         # Пересылаем оригинальное сообщение
         forwarded = await update.message.forward(config.CURATOR_ID)
 
-        # Сохраняем связь message_id -> user_id для ответа
-        # Используем bot_data для хранения маппинга
-        if "question_mapping" not in context.bot_data:
-            context.bot_data["question_mapping"] = {}
-
-        context.bot_data["question_mapping"][forwarded.message_id] = tg_id
-        context.bot_data["question_mapping"][header_msg.message_id] = tg_id
+        # Сохраняем связь message_id -> student_id в БД (переживает перезапуск)
+        await db.save_support_question(forwarded.message_id, tg_id, lesson_id)
+        await db.save_support_question(header_msg.message_id, tg_id, lesson_id)
 
         logger.info(f"Вопрос от {tg_id} переслан куратору")
 
@@ -113,9 +109,8 @@ async def curator_reply_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
     replied_msg_id = update.message.reply_to_message.message_id
 
-    # Ищем студента по message_id
-    mapping = context.bot_data.get("question_mapping", {})
-    student_id = mapping.get(replied_msg_id)
+    # Ищем студента по message_id в БД
+    student_id = await db.get_student_by_message(replied_msg_id)
 
     if not student_id:
         return

@@ -69,3 +69,13 @@ class AccessCode:
     is_used: bool
     used_by: Optional[int]
     created_at: datetime
+
+
+@dataclass
+class SupportQuestion:
+    """Вопрос куратору (маппинг message_id -> student_id)"""
+    id: int
+    message_id: int
+    student_id: int
+    lesson_id: Optional[int]
+    created_at: datetime

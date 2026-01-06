@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 
 from bot.database.connection import get_pool
-from bot.database.models import User, Lesson, Enrollment, UserProgress, Submission, AccessCode
+from bot.database.models import User, Lesson, Enrollment, UserProgress, Submission, AccessCode, SupportQuestion
 
 
 # ============================================
@@ -453,3 +453,29 @@ async def clear_reminders_on_activity(user_id: int):
         "DELETE FROM reminders WHERE user_id = $1",
         user_id
     )
+
+
+# ============================================
+# Support Questions (маппинг вопросов куратору)
+# ============================================
+
+async def save_support_question(message_id: int, student_id: int, lesson_id: Optional[int] = None):
+    """Сохранить связь message_id -> student_id для ответа куратора"""
+    pool = await get_pool()
+    await pool.execute(
+        """
+        INSERT INTO support_questions (message_id, student_id, lesson_id)
+        VALUES ($1, $2, $3)
+        """,
+        message_id, student_id, lesson_id
+    )
+
+
+async def get_student_by_message(message_id: int) -> Optional[int]:
+    """Получить student_id по message_id (для ответа куратора)"""
+    pool = await get_pool()
+    student_id = await pool.fetchval(
+        "SELECT student_id FROM support_questions WHERE message_id = $1",
+        message_id
+    )
+    return student_id
