@@ -163,6 +163,8 @@ async def my_progress_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     # Прогресс-бар
     progress_pct = int((completed / total) * 100) if total else 0
     filled = progress_pct // 10
+    if completed > 0 and filled == 0:
+        filled = 1  # Минимум 1 блок если есть прогресс
     progress_bar = "[" + "=" * filled + " " * (10 - filled) + "]"
 
     # Формируем текст
