@@ -238,6 +238,20 @@ async def accept_homework(update, context, tg_id: int, lesson, content: str, con
     await update.message.reply_text(final_text, reply_markup=main_menu_keyboard())
 
 
+async def receive_hw_voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка голосовых сообщений при сдаче ДЗ — не принимаем"""
+    tg_id = update.effective_user.id
+
+    user = await db.get_user(tg_id)
+    if not user or user.state != UserState.WAITING_HW.value:
+        return
+
+    await update.message.reply_text(
+        "Голосовые сообщения не принимаются. Напишите ответ текстом.",
+        reply_markup=cancel_keyboard()
+    )
+
+
 def is_youtube_link(text: str) -> bool:
     """Проверка YouTube ссылки"""
     patterns = [

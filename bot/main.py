@@ -37,7 +37,8 @@ from bot.handlers.lessons import (
 from bot.handlers.homework import (
     submit_hw_callback,
     receive_hw_text_handler,
-    receive_hw_file_handler
+    receive_hw_file_handler,
+    receive_hw_voice_handler
 )
 from bot.handlers.admin import (
     stat_handler,
@@ -76,7 +77,11 @@ async def receive_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def receive_media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик фото и голосовых сообщений (для вопросов куратору)"""
+    """Обработчик фото и голосовых сообщений"""
+    # Проверяем голосовое при сдаче ДЗ (отклоняем)
+    if update.message.voice:
+        await receive_hw_voice_handler(update, context)
+    # Вопросы куратору (фото/голосовые)
     await receive_question_handler(update, context)
 
 
