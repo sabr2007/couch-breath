@@ -34,6 +34,7 @@ class Config:
     LLM_TIMEOUT: int = int(os.getenv("LLM_TIMEOUT", "15"))
     MIN_ANSWER_LENGTH: int = int(os.getenv("MIN_ANSWER_LENGTH", "20"))
     RATE_LIMIT_PER_HOUR: int = int(os.getenv("RATE_LIMIT_PER_HOUR", "7"))
+    TOTAL_LESSONS: int = int(os.getenv("TOTAL_LESSONS", "18"))
     
     @classmethod
     def validate(cls) -> list[str]:

@@ -11,6 +11,7 @@ from bot.states import UserState
 from bot.keyboards import lesson_keyboard, main_menu_keyboard
 from bot.database import queries as db
 from bot.database.connection import get_pool
+from bot.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +117,7 @@ async def mark_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     logger.info(f"Урок {lesson_id} отмечен изученным: {tg_id}")
 
-    if lesson.order_num >= 18:
+    if lesson.order_num >= config.TOTAL_LESSONS:
         await query.edit_message_text(
             "🎉 Поздравляю! Ты прошёл весь курс!",
             reply_markup=main_menu_keyboard()
@@ -129,7 +130,7 @@ async def mark_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def my_progress_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Callback: показать прогресс"""
+    """Callback: показать прогресс с детальным списком уроков"""
     query = update.callback_query
     await query.answer()
 
@@ -143,19 +144,32 @@ async def my_progress_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return
 
-    # Считаем завершённые уроки
-    pool = await get_pool()
-    completed = await pool.fetchval(
-        "SELECT COUNT(*) FROM user_progress WHERE user_id = $1 AND status = 'COMPLETED'",
-        tg_id
-    )
+    # Получаем все уроки со статусами
+    lessons = await db.get_lessons_with_status(tg_id)
+    total = len(lessons)
+    completed = sum(1 for l in lessons if l['status'] == 'COMPLETED')
 
-    current_lesson = await db.get_lesson(enrollment.current_lesson_id)
-    current_name = current_lesson.title if current_lesson else "—"
+    # Прогресс-бар
+    progress_pct = int((completed / total) * 100) if total else 0
+    filled = progress_pct // 10
+    progress_bar = "[" + "=" * filled + " " * (10 - filled) + "]"
 
-    progress_pct = int((completed / 18) * 100) if completed else 0
+    # Формируем текст
+    text = f"Ваш прогресс: {completed}/{total} ({progress_pct}%)\n{progress_bar}\n\n"
 
-    text = f"Ваш прогресс\n\nПройдено: {completed} из 18 уроков ({progress_pct}%)\nТекущий урок: {current_name}"
+    # Иконки статусов
+    status_icons = {
+        'COMPLETED': '+',
+        'OPEN': '>',
+        'LOCKED': '-'
+    }
+
+    # Список уроков
+    for lesson in lessons:
+        icon = status_icons[lesson['status']]
+        text += f"{icon} {lesson['order_num']}. {lesson['title']}\n"
+
+    text += "\n+ пройден  > текущий  - закрыт"
 
     try:
         await query.edit_message_text(
@@ -163,5 +177,4 @@ async def my_progress_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             reply_markup=main_menu_keyboard()
         )
     except BadRequest:
-        # Игнорируем ошибку "Message is not modified"
         pass

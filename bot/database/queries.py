@@ -97,6 +97,34 @@ async def get_all_lessons() -> List[Lesson]:
     return [Lesson(**dict(row)) for row in rows]
 
 
+async def get_lessons_with_status(user_id: int) -> List[dict]:
+    """
+    Получить все уроки со статусами для пользователя.
+    Возвращает: order_num, title, status (LOCKED/OPEN/COMPLETED)
+    """
+    pool = await get_pool()
+    rows = await pool.fetch(
+        """
+        SELECT
+            l.id,
+            l.order_num,
+            l.title,
+            CASE
+                WHEN up.status = 'COMPLETED' THEN 'COMPLETED'
+                WHEN up.status IS NOT NULL THEN 'OPEN'
+                WHEN e.current_lesson_id = l.id THEN 'OPEN'
+                ELSE 'LOCKED'
+            END as status
+        FROM lessons l
+        LEFT JOIN user_progress up ON up.lesson_id = l.id AND up.user_id = $1
+        LEFT JOIN enrollments e ON e.user_id = $1
+        ORDER BY l.order_num
+        """,
+        user_id
+    )
+    return [dict(row) for row in rows]
+
+
 # ============================================
 # Enrollments
 # ============================================

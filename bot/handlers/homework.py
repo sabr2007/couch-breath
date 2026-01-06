@@ -230,7 +230,7 @@ async def accept_homework(update, context, tg_id: int, lesson, content: str, con
     logger.info(f"ДЗ принято: user={tg_id}, lesson={lesson.id}")
 
     # Определяем финальное сообщение
-    if lesson.order_num >= 18:
+    if lesson.order_num >= config.TOTAL_LESSONS:
         final_text = f"{ai_message}\n\n🎉 Поздравляю! Ты прошёл весь курс!"
     else:
         final_text = f"{ai_message}\n\nУрок {lesson.order_num} завершён! Следующий урок откроется через 1 день."
