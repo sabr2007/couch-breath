@@ -9,6 +9,7 @@ from telegram.ext import ContextTypes
 from bot.states import UserState
 from bot.keyboards import lesson_keyboard, main_menu_keyboard
 from bot.database import queries as db
+from bot.database.connection import get_pool
 
 logger = logging.getLogger(__name__)
 
