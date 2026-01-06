@@ -310,6 +310,13 @@ async def get_users_ready_for_next_lesson() -> List[dict]:
             up.status = 'COMPLETED'
             AND up.completed_at <= NOW() - INTERVAL '1 day'
             AND l.order_num < 18
+            -- Проверяем, что следующий урок ещё НЕ открыт
+            AND NOT EXISTS (
+                SELECT 1 FROM user_progress up2
+                INNER JOIN lessons l2 ON l2.id = up2.lesson_id
+                WHERE up2.user_id = e.user_id
+                AND l2.order_num = l.order_num + 1
+            )
         """
     )
     return [dict(row) for row in rows]
