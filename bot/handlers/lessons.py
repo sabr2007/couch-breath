@@ -170,17 +170,15 @@ async def my_progress_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # Иконки статусов
     status_icons = {
-        'COMPLETED': '+',
-        'OPEN': '>',
-        'LOCKED': '-'
+        'COMPLETED': '✅',
+        'OPEN': '📍',
+        'LOCKED': '🔒'
     }
 
     # Список уроков
     for lesson in lessons:
-        icon = status_icons[lesson['status']]
+        icon = status_icons.get(lesson['status'], '🔒')
         text += f"{icon} {lesson['order_num']}. {lesson['title']}\n"
-
-    text += "\n+ пройден  > текущий  - закрыт"
 
     try:
         await query.edit_message_text(
