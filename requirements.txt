@@ -8,7 +8,7 @@ asyncpg==0.29.0
 python-dotenv==1.0.1
 
 # --- OpenAI ---
-openai==1.51.0
+openai>=1.60.0
 
 # --- Scheduler ---
 APScheduler==3.10.4
