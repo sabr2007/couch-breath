@@ -2,6 +2,7 @@
 Админ-команды
 """
 
+import asyncio
 import logging
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -115,6 +116,7 @@ async def broadcast_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(user.tg_id, message_text)
             sent += 1
+            await asyncio.sleep(0.05)  # Анти-флуд задержка
         except Exception:
             failed += 1
 
