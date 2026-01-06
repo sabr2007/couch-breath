@@ -1,0 +1,17 @@
+# ============================================
+# Telegram Bot "Дыхание Тренера" - Dependencies
+# ============================================
+
+# --- Core ---
+python-telegram-bot[job-queue]==21.3
+asyncpg==0.29.0
+python-dotenv==1.0.1
+
+# --- OpenAI ---
+openai==1.51.0
+
+# --- Scheduler ---
+APScheduler==3.10.4
+
+# --- Utilities ---
+pytz==2024.1

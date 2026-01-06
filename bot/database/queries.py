@@ -1,0 +1,270 @@
+"""
+SQL-запросы к базе данных
+"""
+
+from datetime import datetime, timedelta
+from typing import Optional, List
+
+from bot.database.connection import get_pool
+from bot.database.models import User, Lesson, Enrollment, UserProgress, Submission, AccessCode
+
+
+# ============================================
+# Users
+# ============================================
+
+async def get_user(tg_id: int) -> Optional[User]:
+    """Получить пользователя по Telegram ID"""
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT * FROM users WHERE tg_id = $1",
+        tg_id
+    )
+    if row:
+        return User(**dict(row))
+    return None
+
+
+async def create_user(tg_id: int, username: str, full_name: str) -> User:
+    """Создать нового пользователя"""
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        """
+        INSERT INTO users (tg_id, username, full_name)
+        VALUES ($1, $2, $3)
+        RETURNING *
+        """,
+        tg_id, username, full_name
+    )
+    return User(**dict(row))
+
+
+async def update_user_state(tg_id: int, state: str):
+    """Обновить состояние пользователя"""
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE users SET state = $1, last_activity = NOW() WHERE tg_id = $2",
+        state, tg_id
+    )
+
+
+async def update_last_activity(tg_id: int):
+    """Обновить время последней активности"""
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE users SET last_activity = NOW() WHERE tg_id = $1",
+        tg_id
+    )
+
+
+# ============================================
+# Lessons
+# ============================================
+
+async def get_lesson(lesson_id: int) -> Optional[Lesson]:
+    """Получить урок по ID"""
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT * FROM lessons WHERE id = $1",
+        lesson_id
+    )
+    if row:
+        return Lesson(**dict(row))
+    return None
+
+
+async def get_lesson_by_order(order_num: int) -> Optional[Lesson]:
+    """Получить урок по порядковому номеру"""
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT * FROM lessons WHERE order_num = $1",
+        order_num
+    )
+    if row:
+        return Lesson(**dict(row))
+    return None
+
+
+async def get_all_lessons() -> List[Lesson]:
+    """Получить все уроки"""
+    pool = await get_pool()
+    rows = await pool.fetch("SELECT * FROM lessons ORDER BY order_num")
+    return [Lesson(**dict(row)) for row in rows]
+
+
+# ============================================
+# Enrollments
+# ============================================
+
+async def get_enrollment(user_id: int) -> Optional[Enrollment]:
+    """Получить зачисление пользователя"""
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT * FROM enrollments WHERE user_id = $1",
+        user_id
+    )
+    if row:
+        return Enrollment(**dict(row))
+    return None
+
+
+async def create_enrollment(user_id: int) -> Enrollment:
+    """Создать зачисление (после активации кода)"""
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        """
+        INSERT INTO enrollments (user_id, current_lesson_id)
+        VALUES ($1, 1)
+        RETURNING *
+        """,
+        user_id
+    )
+    return Enrollment(**dict(row))
+
+
+# ============================================
+# User Progress
+# ============================================
+
+async def get_user_progress(user_id: int, lesson_id: int) -> Optional[UserProgress]:
+    """Получить прогресс по уроку"""
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT * FROM user_progress WHERE user_id = $1 AND lesson_id = $2",
+        user_id, lesson_id
+    )
+    if row:
+        return UserProgress(**dict(row))
+    return None
+
+
+async def set_lesson_status(user_id: int, lesson_id: int, status: str):
+    """Установить статус урока"""
+    pool = await get_pool()
+    await pool.execute(
+        """
+        INSERT INTO user_progress (user_id, lesson_id, status)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (user_id, lesson_id) 
+        DO UPDATE SET status = $3
+        """,
+        user_id, lesson_id, status
+    )
+
+
+async def complete_lesson(user_id: int, lesson_id: int):
+    """Завершить урок"""
+    pool = await get_pool()
+    await pool.execute(
+        """
+        INSERT INTO user_progress (user_id, lesson_id, status, completed_at)
+        VALUES ($1, $2, 'COMPLETED', NOW())
+        ON CONFLICT (user_id, lesson_id) 
+        DO UPDATE SET status = 'COMPLETED', completed_at = NOW()
+        """,
+        user_id, lesson_id
+    )
+
+
+# ============================================
+# Submissions
+# ============================================
+
+async def create_submission(
+    user_id: int,
+    lesson_id: int,
+    content_text: str,
+    content_type: str,
+    ai_verdict: str,
+    ai_message: str
+) -> Submission:
+    """Сохранить сданное ДЗ"""
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        """
+        INSERT INTO submissions 
+        (user_id, lesson_id, content_text, content_type, ai_verdict, ai_message)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *
+        """,
+        user_id, lesson_id, content_text, content_type, ai_verdict, ai_message
+    )
+    return Submission(**dict(row))
+
+
+async def count_recent_submissions(user_id: int, lesson_id: int, hours: int = 1) -> int:
+    """Количество попыток за последние N часов (для rate limiting)"""
+    pool = await get_pool()
+    count = await pool.fetchval(
+        """
+        SELECT COUNT(*) FROM submissions
+        WHERE user_id = $1 AND lesson_id = $2
+        AND created_at > NOW() - INTERVAL '1 hour' * $3
+        """,
+        user_id, lesson_id, hours
+    )
+    return count or 0
+
+
+# ============================================
+# Access Codes
+# ============================================
+
+async def get_access_code(code: str) -> Optional[AccessCode]:
+    """Получить код доступа"""
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT * FROM access_codes WHERE code = $1",
+        code
+    )
+    if row:
+        return AccessCode(**dict(row))
+    return None
+
+
+async def use_access_code(code: str, user_id: int):
+    """Пометить код как использованный"""
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE access_codes SET is_used = TRUE, used_by = $2 WHERE code = $1",
+        code, user_id
+    )
+
+
+async def create_access_code(code: str):
+    """Создать новый код доступа"""
+    pool = await get_pool()
+    await pool.execute(
+        "INSERT INTO access_codes (code) VALUES ($1)",
+        code
+    )
+
+
+# ============================================
+# Admin / Stats
+# ============================================
+
+async def get_all_enrolled_users() -> List[User]:
+    """Все зачисленные пользователи (для broadcast)"""
+    pool = await get_pool()
+    rows = await pool.fetch(
+        """
+        SELECT u.* FROM users u
+        INNER JOIN enrollments e ON u.tg_id = e.user_id
+        """
+    )
+    return [User(**dict(row)) for row in rows]
+
+
+async def get_inactive_users(days: int = 3) -> List[User]:
+    """Пользователи без активности N дней"""
+    pool = await get_pool()
+    rows = await pool.fetch(
+        """
+        SELECT u.* FROM users u
+        INNER JOIN enrollments e ON u.tg_id = e.user_id
+        WHERE u.last_activity < NOW() - INTERVAL '1 day' * $1
+        """,
+        days
+    )
+    return [User(**dict(row)) for row in rows]
