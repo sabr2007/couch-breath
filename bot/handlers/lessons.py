@@ -4,6 +4,7 @@
 
 import logging
 from telegram import Update
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from bot.states import UserState
@@ -159,7 +160,11 @@ async def my_progress_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
     text = f"Ваш прогресс\n\nПройдено: {completed} из 18 уроков ({progress_pct}%)\nТекущий урок: {current_name}"
 
-    await query.edit_message_text(
-        text,
-        reply_markup=main_menu_keyboard()
-    )
+    try:
+        await query.edit_message_text(
+            text,
+            reply_markup=main_menu_keyboard()
+        )
+    except BadRequest:
+        # Игнорируем ошибку "Message is not modified"
+        pass
