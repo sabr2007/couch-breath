@@ -47,6 +47,7 @@ from bot.handlers.admin import (
     codes_handler,
     broadcast_handler,
     unlock_all_handler,
+    unlock_lesson_handler,
     force_accept_handler
 )
 from bot.handlers.support import (
@@ -98,6 +99,7 @@ def register_handlers(app: Application):
     app.add_handler(CommandHandler("codes", codes_handler))
     app.add_handler(CommandHandler("broadcast", broadcast_handler))
     app.add_handler(CommandHandler("unlock_all", unlock_all_handler))
+    app.add_handler(CommandHandler("unlock_lesson", unlock_lesson_handler))
     app.add_handler(CommandHandler("force_accept", force_accept_handler))
 
     # Callbacks — start

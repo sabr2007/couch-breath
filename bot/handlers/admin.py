@@ -146,6 +146,38 @@ async def unlock_all_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 @admin_only
+async def unlock_lesson_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Открыть конкретный урок пользователю"""
+    if len(context.args) < 2:
+        await update.message.reply_text("Использование: /unlock_lesson <tg_id> <lesson_num>")
+        return
+
+    try:
+        target_id = int(context.args[0])
+        lesson_num = int(context.args[1])
+    except ValueError:
+        await update.message.reply_text("Неверные параметры")
+        return
+
+    lesson = await db.get_lesson_by_order(lesson_num)
+    if not lesson:
+        await update.message.reply_text("Урок не найден")
+        return
+
+    # Открываем урок
+    await db.set_lesson_status(target_id, lesson.id, "OPEN")
+    
+    # Обновляем current_lesson_id если нужно
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE enrollments SET current_lesson_id = $1 WHERE user_id = $2 AND current_lesson_id < $1",
+        lesson.id, target_id
+    )
+
+    await update.message.reply_text(f"Урок {lesson_num} открыт для {target_id}")
+
+
+@admin_only
 async def force_accept_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Засчитать урок вручную"""
     if len(context.args) < 2:
