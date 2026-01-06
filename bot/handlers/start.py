@@ -110,7 +110,7 @@ async def contact_support_callback(update: Update, context: ContextTypes.DEFAULT
     await query.answer()
 
     await query.edit_message_text(
-        "Для получения кода доступа или по другим вопросам\nнапишите куратору: @your_curator_username\n\nИли попробуйте ввести код ещё раз:",
+        "Для получения кода доступа или по другим вопросам\nнапишите куратору: @sabrval\n\nИли попробуйте ввести код ещё раз:",
         reply_markup=no_auth_keyboard()
     )
 

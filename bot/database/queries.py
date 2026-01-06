@@ -49,10 +49,15 @@ async def update_user_state(tg_id: int, state: str):
 
 
 async def update_last_activity(tg_id: int):
-    """Обновить время последней активности"""
+    """Обновить время последней активности и сбросить напоминания"""
     pool = await get_pool()
     await pool.execute(
         "UPDATE users SET last_activity = NOW() WHERE tg_id = $1",
+        tg_id
+    )
+    # Сбрасываем напоминания — пользователь вернулся
+    await pool.execute(
+        "DELETE FROM reminders WHERE user_id = $1",
         tg_id
     )
 
@@ -206,6 +211,21 @@ async def count_recent_submissions(user_id: int, lesson_id: int, hours: int = 1)
     return count or 0
 
 
+async def has_accepted_submission(user_id: int, lesson_id: int) -> bool:
+    """Проверить, есть ли принятое ДЗ для урока"""
+    pool = await get_pool()
+    result = await pool.fetchval(
+        """
+        SELECT EXISTS(
+            SELECT 1 FROM submissions
+            WHERE user_id = $1 AND lesson_id = $2 AND ai_verdict = 'ACCEPT'
+        )
+        """,
+        user_id, lesson_id
+    )
+    return result or False
+
+
 # ============================================
 # Access Codes
 # ============================================
@@ -328,3 +348,55 @@ async def unlock_next_lesson(user_id: int, current_order: int):
     )
 
     return next_lesson_id
+
+
+# ============================================
+# Reminders (напоминания без спама)
+# ============================================
+
+async def get_users_for_reminder(days: int, reminder_type: str) -> List[User]:
+    """
+    Получить пользователей для напоминания.
+    Возвращает только тех, кому ЕЩЁ НЕ отправляли данный тип напоминания.
+
+    days: количество дней неактивности (3 или 7)
+    reminder_type: 'soft' (3 дня) или 'strong' (7 дней)
+    """
+    pool = await get_pool()
+    rows = await pool.fetch(
+        """
+        SELECT u.* FROM users u
+        INNER JOIN enrollments e ON u.tg_id = e.user_id
+        LEFT JOIN reminders r ON r.user_id = u.tg_id AND r.reminder_type = $2
+        WHERE u.last_activity < NOW() - INTERVAL '1 day' * $1
+          AND u.last_activity >= NOW() - INTERVAL '14 days'  -- Не спамим после 14 дней
+          AND r.id IS NULL  -- Напоминание этого типа ещё не отправлялось
+        """,
+        days, reminder_type
+    )
+    return [User(**dict(row)) for row in rows]
+
+
+async def log_reminder(user_id: int, reminder_type: str):
+    """Записать отправленное напоминание"""
+    pool = await get_pool()
+    await pool.execute(
+        """
+        INSERT INTO reminders (user_id, reminder_type)
+        VALUES ($1, $2)
+        ON CONFLICT (user_id, reminder_type) DO NOTHING
+        """,
+        user_id, reminder_type
+    )
+
+
+async def clear_reminders_on_activity(user_id: int):
+    """
+    Очистить напоминания при возвращении пользователя.
+    Вызывается при обновлении last_activity.
+    """
+    pool = await get_pool()
+    await pool.execute(
+        "DELETE FROM reminders WHERE user_id = $1",
+        user_id
+    )

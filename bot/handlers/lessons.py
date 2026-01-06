@@ -74,9 +74,6 @@ async def show_lesson(query, lesson):
     if lesson.video_url:
         text += f"Видео: {lesson.video_url}\n\n"
 
-    if lesson.content_text:
-        text += f"{lesson.content_text}\n\n"
-
     if lesson.has_homework:
         hw_type_text = {
             "text": "текстовый ответ",

@@ -26,6 +26,15 @@ async def submit_hw_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     data = query.data  # submit_hw:5
     lesson_id = int(data.split(":")[1])
 
+    # Проверяем, не сдано ли уже ДЗ
+    if await db.has_accepted_submission(tg_id, lesson_id):
+        await query.edit_message_text(
+            "✅ Домашнее задание по этому уроку уже принято!\n\n"
+            "Ожидайте открытия следующего урока (через 1 день после сдачи).",
+            reply_markup=main_menu_keyboard()
+        )
+        return
+
     # Проверяем rate limit
     recent = await db.count_recent_submissions(tg_id, lesson_id, hours=1)
     if recent >= config.RATE_LIMIT_PER_HOUR:
@@ -50,8 +59,13 @@ async def submit_hw_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "file": "файл (PDF или DOCX)"
     }.get(lesson.homework_type, "ответ")
 
+    # Формируем текст с заданием
+    hw_text = ""
+    if lesson.content_text:
+        hw_text = f"📝 Задание:\n{lesson.content_text}\n\n"
+
     await query.edit_message_text(
-        f"Отправьте {hw_type_text} следующим сообщением:",
+        f"{hw_text}Отправьте {hw_type_text} следующим сообщением:",
         reply_markup=cancel_keyboard()
     )
 

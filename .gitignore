@@ -73,6 +73,5 @@ Thumbs.db
 *.session
 *.session-journal
 
-initial_plan.md
-
+.claude/
 
