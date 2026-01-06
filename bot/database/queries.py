@@ -268,3 +268,63 @@ async def get_inactive_users(days: int = 3) -> List[User]:
         days
     )
     return [User(**dict(row)) for row in rows]
+
+
+async def get_users_ready_for_next_lesson() -> List[dict]:
+    """
+    Получить пользователей, которым пора открыть следующий урок.
+    Условие: прошло >= 1 день с момента завершения текущего урока.
+    """
+    pool = await get_pool()
+    rows = await pool.fetch(
+        """
+        SELECT
+            e.user_id,
+            e.current_lesson_id,
+            l.order_num as current_order,
+            up.completed_at
+        FROM enrollments e
+        INNER JOIN lessons l ON l.id = e.current_lesson_id
+        INNER JOIN user_progress up ON up.user_id = e.user_id AND up.lesson_id = e.current_lesson_id
+        WHERE
+            up.status = 'COMPLETED'
+            AND up.completed_at <= NOW() - INTERVAL '1 day'
+            AND l.order_num < 18
+        """
+    )
+    return [dict(row) for row in rows]
+
+
+async def unlock_next_lesson(user_id: int, current_order: int):
+    """Открыть следующий урок пользователю"""
+    pool = await get_pool()
+
+    # Получаем следующий урок
+    next_lesson = await pool.fetchrow(
+        "SELECT id FROM lessons WHERE order_num = $1",
+        current_order + 1
+    )
+
+    if not next_lesson:
+        return None
+
+    next_lesson_id = next_lesson["id"]
+
+    # Обновляем current_lesson_id
+    await pool.execute(
+        "UPDATE enrollments SET current_lesson_id = $1 WHERE user_id = $2",
+        next_lesson_id, user_id
+    )
+
+    # Открываем урок
+    await pool.execute(
+        """
+        INSERT INTO user_progress (user_id, lesson_id, status)
+        VALUES ($1, $2, 'OPEN')
+        ON CONFLICT (user_id, lesson_id)
+        DO UPDATE SET status = 'OPEN'
+        """,
+        user_id, next_lesson_id
+    )
+
+    return next_lesson_id

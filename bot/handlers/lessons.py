@@ -9,7 +9,6 @@ from telegram.ext import ContextTypes
 from bot.states import UserState
 from bot.keyboards import lesson_keyboard, main_menu_keyboard
 from bot.database import queries as db
-from bot.database.connection import get_pool
 
 logger = logging.getLogger(__name__)
 
@@ -114,25 +113,20 @@ async def mark_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Завершаем урок
     await db.complete_lesson(tg_id, lesson_id)
 
-    # Переводим на следующий урок
-    enrollment = await db.get_enrollment(tg_id)
-    if enrollment and lesson.order_num < 18:
-        next_lesson = await db.get_lesson_by_order(lesson.order_num + 1)
-        if next_lesson:
-            # Обновляем current_lesson_id
-            pool = await get_pool()
-            await pool.execute(
-                "UPDATE enrollments SET current_lesson_id = $1 WHERE user_id = $2",
-                next_lesson.id, tg_id
-            )
-            await db.set_lesson_status(tg_id, next_lesson.id, "OPEN")
+    # НЕ открываем следующий урок сразу — это сделает scheduler через 1 день
 
     logger.info(f"Урок {lesson_id} отмечен изученным: {tg_id}")
 
-    await query.edit_message_text(
-        f"Урок {lesson.order_num} завершён!\n\nСледующий урок откроется через 1 день.",
-        reply_markup=main_menu_keyboard()
-    )
+    if lesson.order_num >= 18:
+        await query.edit_message_text(
+            "🎉 Поздравляю! Ты прошёл весь курс!",
+            reply_markup=main_menu_keyboard()
+        )
+    else:
+        await query.edit_message_text(
+            f"Урок {lesson.order_num} завершён!\n\nСледующий урок откроется через 1 день.",
+            reply_markup=main_menu_keyboard()
+        )
 
 
 async def my_progress_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

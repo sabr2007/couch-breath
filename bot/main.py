@@ -17,6 +17,7 @@ from telegram.ext import (
 from bot.config import config
 from bot.database.connection import get_pool, close_pool
 from bot.database.migrations import run_migrations
+from bot.services.scheduler import setup_scheduler, shutdown_scheduler, set_bot
 
 # Хендлеры
 from bot.handlers.start import (
@@ -106,9 +107,15 @@ async def post_init(app: Application):
     await run_migrations()
     logger.info("База данных подключена, миграции выполнены")
 
+    # Запускаем планировщик
+    set_bot(app.bot)
+    setup_scheduler()
+    logger.info("Планировщик запущен")
+
 
 async def post_shutdown(app: Application):
     """Очистка при завершении"""
+    shutdown_scheduler()
     await close_pool()
     logger.info("Соединение с БД закрыто")
 

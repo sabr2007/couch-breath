@@ -4,7 +4,6 @@
 
 import logging
 import re
-import random
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -13,17 +12,9 @@ from bot.keyboards import main_menu_keyboard, cancel_keyboard
 from bot.database import queries as db
 from bot.database.connection import get_pool
 from bot.config import config
+from bot.services.llm import check_homework_with_ai, get_file_video_response
 
 logger = logging.getLogger(__name__)
-
-# Простые ответы для файлов/видео
-FILE_VIDEO_RESPONSES = [
-    "Отлично! Твоё домашнее задание принято. Так держать!",
-    "Супер! Получил твою работу. Молодец, что выполнил!",
-    "Принято! Видно, что ты стараешься. Продолжай в том же духе!",
-    "Класс! Домашка зачтена. Двигаемся дальше!",
-    "Получил! Отличная работа. Ты на правильном пути!",
-]
 
 
 async def submit_hw_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -103,9 +94,39 @@ async def receive_hw_text_handler(update: Update, context: ContextTypes.DEFAULT_
         await accept_homework(update, context, tg_id, lesson, text, "video_link")
         return
 
-    # Для text — принимаем (без AI пока)
+    # Для text — проверяем через AI
     if lesson.homework_type == "text":
-        await accept_homework(update, context, tg_id, lesson, text, "text")
+        # Показываем что проверяем
+        await db.update_user_state(tg_id, UserState.PROCESSING.value)
+        processing_msg = await update.message.reply_text("⏳ Проверяю ответ...")
+
+        # Вызываем AI
+        result = await check_homework_with_ai(
+            lesson_number=lesson.order_num,
+            lesson_topic=lesson.title,
+            homework_task=lesson.content_text or "",
+            user_answer=text
+        )
+
+        await processing_msg.delete()
+
+        if result["verdict"] == "ACCEPT":
+            await accept_homework(update, context, tg_id, lesson, text, "text", result["message"])
+        else:
+            # REVISE — просим доработать
+            await db.create_submission(
+                user_id=tg_id,
+                lesson_id=lesson.id,
+                content_text=text,
+                content_type="text",
+                ai_verdict="REVISE",
+                ai_message=result["message"]
+            )
+            await db.update_user_state(tg_id, UserState.WAITING_HW.value)
+            await update.message.reply_text(
+                f"{result['message']}\n\nПопробуй ещё раз:",
+                reply_markup=cancel_keyboard()
+            )
         return
 
     await update.message.reply_text(
@@ -167,8 +188,13 @@ async def receive_hw_file_handler(update: Update, context: ContextTypes.DEFAULT_
     await accept_homework(update, context, tg_id, lesson, f"file:{document.file_id}", "file")
 
 
-async def accept_homework(update, context, tg_id: int, lesson, content: str, content_type: str):
+async def accept_homework(update, context, tg_id: int, lesson, content: str, content_type: str, ai_message: str = None):
     """Принять и засчитать домашнее задание"""
+
+    # Для файлов/видео — получаем стандартный ответ
+    if ai_message is None:
+        response_data = get_file_video_response()
+        ai_message = response_data["message"]
 
     # Сохраняем submission
     await db.create_submission(
@@ -177,32 +203,25 @@ async def accept_homework(update, context, tg_id: int, lesson, content: str, con
         content_text=content,
         content_type=content_type,
         ai_verdict="ACCEPT",
-        ai_message="Принято"
+        ai_message=ai_message
     )
 
     # Завершаем урок
     await db.complete_lesson(tg_id, lesson.id)
 
-    # Переводим на следующий урок
-    if lesson.order_num < 18:
-        next_lesson = await db.get_lesson_by_order(lesson.order_num + 1)
-        if next_lesson:
-            pool = await get_pool()
-            await pool.execute(
-                "UPDATE enrollments SET current_lesson_id = $1 WHERE user_id = $2",
-                next_lesson.id, tg_id
-            )
-            await db.set_lesson_status(tg_id, next_lesson.id, "OPEN")
+    # НЕ открываем следующий урок сразу — это сделает scheduler через 1 день
 
     await db.update_user_state(tg_id, UserState.IDLE.value)
 
     logger.info(f"ДЗ принято: user={tg_id}, lesson={lesson.id}")
 
-    response = random.choice(FILE_VIDEO_RESPONSES)
-    await update.message.reply_text(
-        f"{response}\n\nУрок {lesson.order_num} завершён! Следующий урок откроется через 1 день.",
-        reply_markup=main_menu_keyboard()
-    )
+    # Определяем финальное сообщение
+    if lesson.order_num >= 18:
+        final_text = f"{ai_message}\n\n🎉 Поздравляю! Ты прошёл весь курс!"
+    else:
+        final_text = f"{ai_message}\n\nУрок {lesson.order_num} завершён! Следующий урок откроется через 1 день."
+
+    await update.message.reply_text(final_text, reply_markup=main_menu_keyboard())
 
 
 def is_youtube_link(text: str) -> bool:

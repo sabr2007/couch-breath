@@ -2,23 +2,63 @@
 Планировщик задач — открытие уроков, напоминания
 """
 
+import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from bot.config import config
+from bot.database import queries as db
 
+logger = logging.getLogger(__name__)
 
 # Глобальный планировщик
 scheduler = AsyncIOScheduler(timezone=config.TIMEZONE)
+
+# Ссылка на бота (устанавливается при старте)
+_bot = None
+
+
+def set_bot(bot):
+    """Установить ссылку на бота для отправки уведомлений"""
+    global _bot
+    _bot = bot
 
 
 async def check_lesson_unlocks():
     """
     Job: Проверка и открытие уроков для всех студентов.
-    Запускается ежедневно в 10:00.
+    Условие: прошло >= 1 день с завершения текущего урока.
     """
-    # TODO: Реализовать
-    pass
+    logger.info("Scheduler: проверяю открытие уроков...")
+
+    try:
+        users = await db.get_users_ready_for_next_lesson()
+        unlocked_count = 0
+
+        for user_data in users:
+            user_id = user_data["user_id"]
+            current_order = user_data["current_order"]
+
+            next_lesson_id = await db.unlock_next_lesson(user_id, current_order)
+
+            if next_lesson_id and _bot:
+                # Отправляем уведомление
+                try:
+                    next_lesson = await db.get_lesson(next_lesson_id)
+                    await _bot.send_message(
+                        user_id,
+                        f"🔓 Открыт новый урок!\n\n"
+                        f"Урок {next_lesson.order_num}: {next_lesson.title}\n\n"
+                        f"Нажми /start чтобы продолжить обучение."
+                    )
+                    unlocked_count += 1
+                except Exception as e:
+                    logger.warning(f"Не удалось отправить уведомление {user_id}: {e}")
+
+        logger.info(f"Scheduler: открыто уроков: {unlocked_count}")
+
+    except Exception as e:
+        logger.error(f"Scheduler error in check_lesson_unlocks: {e}")
 
 
 async def send_reminders():
@@ -26,13 +66,34 @@ async def send_reminders():
     Job: Отправка напоминаний неактивным студентам.
     Запускается ежедневно в 18:00.
     """
-    # TODO: Реализовать
-    pass
+    logger.info("Scheduler: отправляю напоминания...")
+
+    try:
+        inactive_users = await db.get_inactive_users(days=3)
+        sent_count = 0
+
+        for user in inactive_users:
+            if _bot:
+                try:
+                    await _bot.send_message(
+                        user.tg_id,
+                        "👋 Привет! Заметил, что ты давно не заходил.\n\n"
+                        "Не забрось курс — каждый урок важен для твоего развития как тренера.\n\n"
+                        "Нажми /start чтобы продолжить обучение."
+                    )
+                    sent_count += 1
+                except Exception as e:
+                    logger.warning(f"Не удалось отправить напоминание {user.tg_id}: {e}")
+
+        logger.info(f"Scheduler: отправлено напоминаний: {sent_count}")
+
+    except Exception as e:
+        logger.error(f"Scheduler error in send_reminders: {e}")
 
 
 def setup_scheduler():
     """Настройка планировщика"""
-    
+
     # Проверка открытия уроков — каждый день в 10:00
     scheduler.add_job(
         check_lesson_unlocks,
@@ -40,7 +101,7 @@ def setup_scheduler():
         id="check_lesson_unlocks",
         replace_existing=True
     )
-    
+
     # Напоминания — каждый день в 18:00
     scheduler.add_job(
         send_reminders,
@@ -48,10 +109,12 @@ def setup_scheduler():
         id="send_reminders",
         replace_existing=True
     )
-    
+
     scheduler.start()
+    logger.info("Scheduler запущен")
 
 
 def shutdown_scheduler():
     """Остановка планировщика"""
     scheduler.shutdown()
+    logger.info("Scheduler остановлен")
