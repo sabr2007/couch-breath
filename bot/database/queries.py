@@ -97,6 +97,24 @@ async def get_all_lessons() -> List[Lesson]:
     return [Lesson(**dict(row)) for row in rows]
 
 
+async def check_lesson_access(user_id: int, lesson_id: int) -> bool:
+    """Проверить, имеет ли пользователь доступ к уроку (OPEN или COMPLETED)"""
+    pool = await get_pool()
+    has_access = await pool.fetchval(
+        """
+        SELECT EXISTS(
+            SELECT 1 FROM user_progress
+            WHERE user_id = $1 AND lesson_id = $2
+        ) OR EXISTS(
+            SELECT 1 FROM enrollments
+            WHERE user_id = $1 AND current_lesson_id = $2
+        )
+        """,
+        user_id, lesson_id
+    )
+    return has_access
+
+
 async def get_lessons_with_status(user_id: int) -> List[dict]:
     """
     Получить все уроки со статусами для пользователя.

@@ -49,9 +49,20 @@ async def view_lesson_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     await query.answer()
 
+    tg_id = query.from_user.id
+
     # Парсим lesson_id из callback_data
     data = query.data  # view_lesson:5
     lesson_id = int(data.split(":")[1])
+
+    # Проверяем доступ к уроку
+    has_access = await db.check_lesson_access(tg_id, lesson_id)
+    if not has_access:
+        await query.edit_message_text(
+            "У вас нет доступа к этому уроку.",
+            reply_markup=main_menu_keyboard()
+        )
+        return
 
     lesson = await db.get_lesson(lesson_id)
     if not lesson:
