@@ -74,9 +74,9 @@ async def test_get_users_ready_not_enough_time(sample_lessons, enrolled_user):
 
 
 @pytest.mark.asyncio
-async def test_get_users_ready_exactly_1_day(sample_lessons, enrolled_user):
+async def test_get_users_ready_exactly_1_day_not_enough(sample_lessons, enrolled_user):
     """
-    Тест: урок завершён ровно 1 день назад → попадает в список
+    Тест: урок завершён ровно 1 день назад → НЕ попадает в список (нужно 2 дня)
     """
     pool = await get_pool()
     user_id = enrolled_user["user"]["tg_id"]
@@ -84,6 +84,33 @@ async def test_get_users_ready_exactly_1_day(sample_lessons, enrolled_user):
 
     # Завершаем урок ровно 1 день назад
     completed_at = datetime.utcnow() - timedelta(days=1)
+    await pool.execute(
+        """
+        UPDATE user_progress
+        SET status = 'COMPLETED', completed_at = $3
+        WHERE user_id = $1 AND lesson_id = $2
+        """,
+        user_id,
+        lesson_id,
+        completed_at
+    )
+
+    # Проверяем — НЕ должен попасть (логика +2 дня)
+    users = await db.get_users_ready_for_next_lesson()
+    assert len(users) == 0
+
+
+@pytest.mark.asyncio
+async def test_get_users_ready_exactly_2_days(sample_lessons, enrolled_user):
+    """
+    Тест: урок завершён ровно 2 дня назад → попадает в список
+    """
+    pool = await get_pool()
+    user_id = enrolled_user["user"]["tg_id"]
+    lesson_id = enrolled_user["current_lesson_id"]
+
+    # Завершаем урок ровно 2 дня назад
+    completed_at = datetime.utcnow() - timedelta(days=2)
     await pool.execute(
         """
         UPDATE user_progress
@@ -139,7 +166,7 @@ async def test_get_users_ready_already_unlocked(sample_lessons, enrolled_user):
 
 
 @pytest.mark.asyncio
-async def test_get_users_ready_last_lesson(sample_lessons, db_clean):
+async def test_get_users_ready_last_lesson(sample_lessons, db_pool):
     """
     Тест: пользователь на 18 уроке (последнем) → НЕ попадает в список
     """
@@ -226,7 +253,7 @@ async def test_unlock_next_lesson_success(sample_lessons, enrolled_user):
 
 
 @pytest.mark.asyncio
-async def test_unlock_next_lesson_no_next(sample_lessons, db_clean):
+async def test_unlock_next_lesson_no_next(sample_lessons, db_pool):
     """
     Тест: нет следующего урока (18 → 19) → возвращает None
     """
@@ -283,7 +310,7 @@ async def test_unlock_next_lesson_idempotent(sample_lessons, enrolled_user):
 # ============================================
 
 @pytest.mark.asyncio
-async def test_get_users_for_reminder_soft_3_days(sample_lessons, db_clean):
+async def test_get_users_for_reminder_soft_3_days(sample_lessons, db_pool):
     """
     Тест: пользователь неактивен 3 дня → получает мягкое напоминание
     """
@@ -316,7 +343,7 @@ async def test_get_users_for_reminder_soft_3_days(sample_lessons, db_clean):
 
 
 @pytest.mark.asyncio
-async def test_get_users_for_reminder_already_sent(sample_lessons, db_clean):
+async def test_get_users_for_reminder_already_sent(sample_lessons, db_pool):
     """
     Тест: напоминание уже отправлено → НЕ попадает в список
     """
@@ -350,7 +377,7 @@ async def test_get_users_for_reminder_already_sent(sample_lessons, db_clean):
 
 
 @pytest.mark.asyncio
-async def test_get_users_for_reminder_strong_7_days(sample_lessons, db_clean):
+async def test_get_users_for_reminder_strong_7_days(sample_lessons, db_pool):
     """
     Тест: пользователь неактивен 7 дней → получает настойчивое напоминание
     """
@@ -381,7 +408,7 @@ async def test_get_users_for_reminder_strong_7_days(sample_lessons, db_clean):
 
 
 @pytest.mark.asyncio
-async def test_get_users_for_reminder_too_old(sample_lessons, db_clean):
+async def test_get_users_for_reminder_too_old(sample_lessons, db_pool):
     """
     Тест: пользователь неактивен 15 дней → НЕ получает напоминание (не спамим)
     """
@@ -411,7 +438,7 @@ async def test_get_users_for_reminder_too_old(sample_lessons, db_clean):
 
 
 @pytest.mark.asyncio
-async def test_get_users_for_reminder_not_enrolled(sample_lessons, db_clean):
+async def test_get_users_for_reminder_not_enrolled(sample_lessons, db_pool):
     """
     Тест: пользователь не зачислен → НЕ получает напоминание
     """

@@ -110,7 +110,7 @@ async def test_check_lesson_unlocks_no_users(sample_lessons, enrolled_user, mock
 
 
 @pytest.mark.asyncio
-async def test_check_lesson_unlocks_multiple_users(sample_lessons, db_clean, mock_bot):
+async def test_check_lesson_unlocks_multiple_users(sample_lessons, db_pool, mock_bot):
     """
     Тест: несколько пользователей готовы к открытию → всем отправляется уведомление
     """
@@ -185,7 +185,7 @@ async def test_check_lesson_unlocks_idempotent(sample_lessons, enrolled_user, mo
 
 
 @pytest.mark.asyncio
-async def test_check_lesson_unlocks_bot_error_continues(sample_lessons, db_clean, mock_bot):
+async def test_check_lesson_unlocks_bot_error_continues(sample_lessons, db_pool, mock_bot):
     """
     Тест: ошибка отправки сообщения не останавливает обработку других пользователей
     """
@@ -232,7 +232,7 @@ async def test_check_lesson_unlocks_bot_error_continues(sample_lessons, db_clean
 
 
 @pytest.mark.asyncio
-async def test_check_lesson_unlocks_last_lesson_no_notification(sample_lessons, db_clean, mock_bot):
+async def test_check_lesson_unlocks_last_lesson_no_notification(sample_lessons, db_pool, mock_bot):
     """
     Тест: последний урок (18) завершён → уведомление НЕ отправляется
     """
@@ -277,7 +277,7 @@ async def test_check_lesson_unlocks_last_lesson_no_notification(sample_lessons, 
 # ============================================
 
 @pytest.mark.asyncio
-async def test_send_reminders_soft_3_days(sample_lessons, db_clean, mock_bot):
+async def test_send_reminders_soft_3_days(sample_lessons, db_pool, mock_bot):
     """
     Тест: пользователь неактивен 3 дня → получает мягкое напоминание
     """
@@ -315,9 +315,11 @@ async def test_send_reminders_soft_3_days(sample_lessons, db_clean, mock_bot):
 
 
 @pytest.mark.asyncio
-async def test_send_reminders_strong_7_days(sample_lessons, db_clean, mock_bot):
+async def test_send_reminders_strong_7_days(sample_lessons, db_pool, mock_bot):
     """
-    Тест: пользователь неактивен 7 дней → получает настойчивое напоминание
+    Тест: пользователь неактивен 7 дней → получает настойчивое напоминание.
+    Примечание: пользователь с 7 днями попадает и в soft (3 дня), и в strong.
+    Чтобы тестировать только strong, сначала логируем soft.
     """
     pool = await get_pool()
     user_id = 222222
@@ -339,11 +341,14 @@ async def test_send_reminders_strong_7_days(sample_lessons, db_clean, mock_bot):
         user_id, sample_lessons[0]["id"]
     )
 
+    # Логируем soft напоминание, чтобы тестировать только strong
+    await db.log_reminder(user_id, "soft")
+
     # Запускаем scheduler
     scheduler.set_bot(mock_bot)
     await scheduler.send_reminders()
 
-    # Проверяем — отправлено 1 сообщение
+    # Проверяем — отправлено 1 сообщение (только strong)
     assert mock_bot.send_message.call_count == 1
 
     # Проверяем текст сообщения
@@ -353,13 +358,15 @@ async def test_send_reminders_strong_7_days(sample_lessons, db_clean, mock_bot):
 
 
 @pytest.mark.asyncio
-async def test_send_reminders_both_types(sample_lessons, db_clean, mock_bot):
+async def test_send_reminders_both_types(sample_lessons, db_pool, mock_bot):
     """
-    Тест: два пользователя — один на 3 дня, другой на 7 дней
+    Тест: два пользователя — один на 3 дня (soft), другой на 7 дней (strong).
+    Примечание: пользователь с 7 днями попадает и в soft, и в strong.
+    Логируем soft для user_id_2, чтобы он получил только strong.
     """
     pool = await get_pool()
 
-    # Пользователь 1: 3 дня
+    # Пользователь 1: 3 дня → получит soft
     user_id_1 = 111111
     await pool.execute(
         """
@@ -376,7 +383,7 @@ async def test_send_reminders_both_types(sample_lessons, db_clean, mock_bot):
         user_id_1, sample_lessons[0]["id"]
     )
 
-    # Пользователь 2: 7 дней
+    # Пользователь 2: 7 дней → получит strong (после того как soft уже был)
     user_id_2 = 222222
     await pool.execute(
         """
@@ -392,17 +399,19 @@ async def test_send_reminders_both_types(sample_lessons, db_clean, mock_bot):
         """,
         user_id_2, sample_lessons[0]["id"]
     )
+    # Логируем soft для user_id_2, чтобы он получил только strong
+    await db.log_reminder(user_id_2, "soft")
 
     # Запускаем scheduler
     scheduler.set_bot(mock_bot)
     await scheduler.send_reminders()
 
-    # Проверяем — отправлено 2 сообщения
+    # Проверяем — отправлено 2 сообщения (soft для user1, strong для user2)
     assert mock_bot.send_message.call_count == 2
 
 
 @pytest.mark.asyncio
-async def test_send_reminders_logs_reminder(sample_lessons, db_clean, mock_bot):
+async def test_send_reminders_logs_reminder(sample_lessons, db_pool, mock_bot):
     """
     Тест: после отправки напоминания создаётся запись в reminders
     """
@@ -439,7 +448,7 @@ async def test_send_reminders_logs_reminder(sample_lessons, db_clean, mock_bot):
 
 
 @pytest.mark.asyncio
-async def test_send_reminders_idempotent(sample_lessons, db_clean, mock_bot):
+async def test_send_reminders_idempotent(sample_lessons, db_pool, mock_bot):
     """
     Тест: повторный вызов send_reminders не отправляет дубликатов
     """
@@ -473,7 +482,7 @@ async def test_send_reminders_idempotent(sample_lessons, db_clean, mock_bot):
 
 
 @pytest.mark.asyncio
-async def test_send_reminders_no_spam_after_14_days(sample_lessons, db_clean, mock_bot):
+async def test_send_reminders_no_spam_after_14_days(sample_lessons, db_pool, mock_bot):
     """
     Тест: пользователь неактивен 15 дней → НЕ получает напоминание
     """
@@ -506,7 +515,7 @@ async def test_send_reminders_no_spam_after_14_days(sample_lessons, db_clean, mo
 
 
 @pytest.mark.asyncio
-async def test_send_reminders_bot_error_continues(sample_lessons, db_clean, mock_bot):
+async def test_send_reminders_bot_error_continues(sample_lessons, db_pool, mock_bot):
     """
     Тест: ошибка отправки сообщения не останавливает обработку
     """

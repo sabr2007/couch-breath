@@ -335,7 +335,7 @@ async def test_scenario_return_after_long_break(sample_lessons, enrolled_user, m
 
 
 @pytest.mark.asyncio
-async def test_scenario_multiple_students_parallel(sample_lessons, db_clean, mock_bot):
+async def test_scenario_multiple_students_parallel(sample_lessons, db_pool, mock_bot):
     """
     Сценарий: Несколько студентов проходят курс параллельно
     - 3 студента на разных этапах курса

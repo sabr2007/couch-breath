@@ -17,20 +17,24 @@ from bot.services import scheduler
 
 
 # ============================================
-# Edge Cases: Time Boundaries
+# Edge Cases: Time Boundaries (логика +2 дня)
+# Важно: SQL использует completed_at::date + 2 <= CURRENT_DATE
+# Это означает сравнение по календарным ДАТАМ, не по часам
 # ============================================
 
 @pytest.mark.asyncio
-async def test_edge_exactly_24_hours(sample_lessons, enrolled_user, mock_bot):
+async def test_edge_exactly_2_days_ago(sample_lessons, enrolled_user, mock_bot):
     """
-    Edge Case: Урок завершён ровно 24 часа назад (1 день)
+    Edge Case: Урок завершён ровно 2 дня назад → попадает в список
+    SQL: completed_at::date + 2 <= CURRENT_DATE
+    Если completed_at = позавчера, то позавчера + 2 = сегодня <= сегодня = TRUE
     """
     pool = await get_pool()
     user_id = enrolled_user["user"]["tg_id"]
     lesson_id = enrolled_user["current_lesson_id"]
 
-    # Завершаем урок ровно 24 часа назад
-    completed_at = datetime.utcnow() - timedelta(hours=24)
+    # Завершаем урок 2 дня назад
+    completed_at = datetime.utcnow() - timedelta(days=2)
     await pool.execute(
         """
         UPDATE user_progress
@@ -40,22 +44,51 @@ async def test_edge_exactly_24_hours(sample_lessons, enrolled_user, mock_bot):
         user_id, lesson_id, completed_at
     )
 
-    # Проверяем — должен попасть в список
+    # Проверяем — должен попасть в список (2 дня прошло)
     users = await db.get_users_ready_for_next_lesson()
     assert len(users) == 1
 
 
 @pytest.mark.asyncio
-async def test_edge_23_hours_59_minutes(sample_lessons, enrolled_user, mock_bot):
+async def test_edge_1_day_ago_not_enough(sample_lessons, enrolled_user, mock_bot):
     """
-    Edge Case: Урок завершён 23 часа 59 минут назад (меньше 1 дня)
+    Edge Case: Урок завершён 1 день назад → НЕ попадает (нужно 2 дня)
+    SQL: completed_at::date + 2 <= CURRENT_DATE
+    Если completed_at = вчера, то вчера + 2 = завтра <= сегодня = FALSE
     """
     pool = await get_pool()
     user_id = enrolled_user["user"]["tg_id"]
     lesson_id = enrolled_user["current_lesson_id"]
 
-    # Завершаем урок почти 1 день назад
-    completed_at = datetime.utcnow() - timedelta(hours=23, minutes=59)
+    # Завершаем урок 1 день назад
+    completed_at = datetime.utcnow() - timedelta(days=1)
+    await pool.execute(
+        """
+        UPDATE user_progress
+        SET status = 'COMPLETED', completed_at = $3
+        WHERE user_id = $1 AND lesson_id = $2
+        """,
+        user_id, lesson_id, completed_at
+    )
+
+    # Проверяем — НЕ должен попасть в список (только 1 день, нужно 2)
+    users = await db.get_users_ready_for_next_lesson()
+    assert len(users) == 0
+
+
+@pytest.mark.asyncio
+async def test_edge_same_day_not_enough(sample_lessons, enrolled_user, mock_bot):
+    """
+    Edge Case: Урок завершён сегодня → НЕ попадает
+    SQL: completed_at::date + 2 <= CURRENT_DATE
+    Если completed_at = сегодня, то сегодня + 2 = послезавтра <= сегодня = FALSE
+    """
+    pool = await get_pool()
+    user_id = enrolled_user["user"]["tg_id"]
+    lesson_id = enrolled_user["current_lesson_id"]
+
+    # Завершаем урок сегодня (несколько часов назад)
+    completed_at = datetime.utcnow() - timedelta(hours=5)
     await pool.execute(
         """
         UPDATE user_progress
@@ -71,16 +104,16 @@ async def test_edge_23_hours_59_minutes(sample_lessons, enrolled_user, mock_bot)
 
 
 @pytest.mark.asyncio
-async def test_edge_24_hours_1_second(sample_lessons, enrolled_user, mock_bot):
+async def test_edge_3_days_ago(sample_lessons, enrolled_user, mock_bot):
     """
-    Edge Case: Урок завершён 24 часа 1 секунда назад
+    Edge Case: Урок завершён 3 дня назад → попадает в список
     """
     pool = await get_pool()
     user_id = enrolled_user["user"]["tg_id"]
     lesson_id = enrolled_user["current_lesson_id"]
 
-    # Завершаем урок чуть больше 1 дня назад
-    completed_at = datetime.utcnow() - timedelta(hours=24, seconds=1)
+    # Завершаем урок 3 дня назад
+    completed_at = datetime.utcnow() - timedelta(days=3)
     await pool.execute(
         """
         UPDATE user_progress
@@ -123,7 +156,7 @@ async def test_edge_lesson_1_to_2(sample_lessons, enrolled_user, mock_bot):
 
 
 @pytest.mark.asyncio
-async def test_edge_lesson_17_to_18(sample_lessons, db_clean, mock_bot):
+async def test_edge_lesson_17_to_18(sample_lessons, db_pool, mock_bot):
     """
     Edge Case: Переход с урока 17 на урок 18 (предпоследний → последний)
     """
@@ -161,7 +194,7 @@ async def test_edge_lesson_17_to_18(sample_lessons, db_clean, mock_bot):
 
 
 @pytest.mark.asyncio
-async def test_edge_lesson_18_to_19_nonexistent(sample_lessons, db_clean, mock_bot):
+async def test_edge_lesson_18_to_19_nonexistent(sample_lessons, db_pool, mock_bot):
     """
     Edge Case: Попытка открыть урок 19 (не существует)
     """
@@ -273,7 +306,7 @@ async def test_edge_user_activity_during_unlock(sample_lessons, enrolled_user, m
 # ============================================
 
 @pytest.mark.asyncio
-async def test_edge_missing_enrollment(sample_lessons, db_clean, mock_bot):
+async def test_edge_missing_enrollment(sample_lessons, db_pool, mock_bot):
     """
     Edge Case: Пользователь без enrollment
     """
@@ -299,7 +332,7 @@ async def test_edge_missing_enrollment(sample_lessons, db_clean, mock_bot):
 
 
 @pytest.mark.asyncio
-async def test_edge_missing_user_progress(sample_lessons, db_clean, mock_bot):
+async def test_edge_missing_user_progress(sample_lessons, db_pool, mock_bot):
     """
     Edge Case: Enrollment есть, но нет записи в user_progress
     """
@@ -365,7 +398,7 @@ async def test_edge_corrupted_completed_at(sample_lessons, enrolled_user, mock_b
 # ============================================
 
 @pytest.mark.asyncio
-async def test_edge_reminder_exactly_3_days(sample_lessons, db_clean, mock_bot):
+async def test_edge_reminder_exactly_3_days(sample_lessons, db_pool, mock_bot):
     """
     Edge Case: last_activity ровно 3 дня назад
     """
@@ -395,20 +428,22 @@ async def test_edge_reminder_exactly_3_days(sample_lessons, db_clean, mock_bot):
 
 
 @pytest.mark.asyncio
-async def test_edge_reminder_exactly_14_days(sample_lessons, db_clean, mock_bot):
+async def test_edge_reminder_exactly_14_days(sample_lessons, db_pool, mock_bot):
     """
-    Edge Case: last_activity ровно 14 дней назад (граница)
+    Edge Case: last_activity 13 дней назад (максимальная граница для напоминаний).
+    SQL условие: last_activity >= NOW() - INTERVAL '14 days' исключает ровно 14 дней.
     """
     pool = await get_pool()
     user_id = 222222
 
-    last_activity = datetime.utcnow() - timedelta(days=14)
+    # 13 дней — последний день, когда ещё попадаем в диапазон
+    last_activity = datetime.utcnow() - timedelta(days=13)
     await pool.execute(
         """
         INSERT INTO users (tg_id, username, full_name, state, last_activity)
         VALUES ($1, $2, $3, $4, $5)
         """,
-        user_id, "user14d", "User 14 Days", "idle", last_activity
+        user_id, "user13d", "User 13 Days", "idle", last_activity
     )
 
     await pool.execute(
@@ -419,13 +454,13 @@ async def test_edge_reminder_exactly_14_days(sample_lessons, db_clean, mock_bot)
         user_id, sample_lessons[0]["id"]
     )
 
-    # Проверяем — должен попасть в список (< 14 дней согласно коду)
+    # Проверяем — должен попасть в список (< 14 дней)
     users = await db.get_users_for_reminder(days=7, reminder_type="strong")
     assert len(users) == 1
 
 
 @pytest.mark.asyncio
-async def test_edge_reminder_both_sent(sample_lessons, db_clean, mock_bot):
+async def test_edge_reminder_both_sent(sample_lessons, db_pool, mock_bot):
     """
     Edge Case: Оба типа напоминаний уже отправлены
     """
@@ -537,7 +572,7 @@ async def test_edge_bot_send_message_exception(sample_lessons, enrolled_user, mo
 # ============================================
 
 @pytest.mark.asyncio
-async def test_edge_large_number_of_users(sample_lessons, db_clean, mock_bot):
+async def test_edge_large_number_of_users(sample_lessons, db_pool, mock_bot):
     """
     Edge Case: Большое количество пользователей (100)
     """
