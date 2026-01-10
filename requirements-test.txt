@@ -2,15 +2,10 @@
 # Testing Dependencies
 # ============================================
 
-# Core testing framework
 pytest==8.0.0
 pytest-asyncio==0.23.3
 
-# Code coverage
 pytest-cov==4.1.0
 
-# Test utilities
-freezegun==1.4.0  # Мокирование времени
+freezegun==1.4.0  
 
-# Optional: PostgreSQL test container (для изолированной БД)
-# testcontainers[postgres]==3.7.1
